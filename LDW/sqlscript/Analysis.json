@@ -1,0 +1,20 @@
+{
+	"name": "Analysis",
+	"properties": {
+		"folder": {
+			"name": "Dimensions_Facts"
+		},
+		"content": {
+			"query": "--Group Sales by Date\nSELECT DD.[Year] AS SalesYear,\n    DD.[Month] AS SalesMonth,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice,\nCOUNT(DISTINCT FS.OrderID) AS SalesOrderTotal\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimDate DD ON DD.DateKey = FS.OrderDateKey\nGROUP BY DD.[Year],\n         DD.[Month]\nORDER BY DD.[Year],\n         DD.[Month];\n\n--Group Sales by Customer\nSELECT DC.DeliverySalesTerritory,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice,\nCOUNT(DISTINCT OrderID) AS SalesOrderTotal\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimCustomer DC ON DC.CustomerKey = FS.CustomerKey\nGROUP BY DC.DeliverySalesTerritory\nORDER BY SUM(FS.Quantity) DESC;\n\n--Group Sales by Supplier\n--Note that multiple Suppliers can be linked to a single Sales Order\nSELECT DS.SupplierName,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimSupplier DS ON DS.SupplierKey = FS.SupplierKey\nGROUP BY DS.SupplierName\nORDER BY SUM(FS.Quantity) DESC;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

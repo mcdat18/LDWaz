@@ -1,0 +1,20 @@
+{
+	"name": "Facts_Views",
+	"properties": {
+		"folder": {
+			"name": "Dimensions_Facts"
+		},
+		"content": {
+			"query": "-- Facts VIEWS\n\nCREATE VIEW LDW.vwFactSales\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'conformed/facts/factsales/initial',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

@@ -1,0 +1,20 @@
+{
+	"name": "Dimensions_Views",
+	"properties": {
+		"folder": {
+			"name": "Dimensions_Facts"
+		},
+		"content": {
+			"query": "-- Create VIEWS on Silver Data - as new data can be written to different folder under specific Dimension\n-- CETAS operation cannot write to an existing folder - this means no dupliate data\n-- To have CETAS write a new version DROP EXTERNAL TABLE.. plus delete folder\n\n--Customer\nCREATE VIEW LDW.vwDimCustomer\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimcustomer/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--StockItem\nCREATE VIEW LDW.vwDimStockItem\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimstockitem/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--Supplier\nCREATE VIEW LDW.vwDimSupplier\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimsupplier/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--Date\nCREATE VIEW LDW.vwDimDate\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimdate',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

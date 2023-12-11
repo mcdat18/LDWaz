@@ -1,0 +1,20 @@
+{
+	"name": "create_dataSource_DB",
+	"properties": {
+		"folder": {
+			"name": "Intialize_LDW"
+		},
+		"content": {
+			"query": "IF db_id('salesLDW') IS NULL\nEXEC('CREATE DATABASE salesLDW COLLATE Latin1_General_100_BIN2_UTF8');\nGO\n\nUSE salesLDW\nGO\n\nIF db_name() = 'master'\n    THROW 50001, 'This script cannot be executed in master database. Create new database and run the script there.', 1;\n\nIF SERVERPROPERTY('EngineEdition') <> 11\n    THROW 50001, 'This script must be executed on Azure Synapse - Serverless SQL endpoint.', 1;\n\nIF NOT EXISTS (SELECT * FROM sys.symmetric_keys) BEGIN\n    declare @pasword nvarchar(400) = CAST(newid() as VARCHAR(400));\n    EXEC('CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''' + @pasword + '''')\nEND;\nGO\n\nCREATE DATABASE SCOPED CREDENTIAL SManagedIdentity\nWITH IDENTITY = 'Managed Identity';\nGO\n\nCREATE DATABASE SCOPED CREDENTIAL SUserIdentity\nWITH IDENTITY = 'User Identity';\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'ldw_csv') \n    CREATE EXTERNAL FILE FORMAT ldw_csv\n    WITH (  \n        FORMAT_TYPE = DELIMITEDTEXT,    \n        FORMAT_OPTIONS ( FIELD_TERMINATOR = ',', \n                         STRING_DELIMITER = '\"',\n                         FIRST_ROW = 2,\n                         PARSER_VERSION = '2.0')\n    );\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'ldw_pqt') \n\tCREATE EXTERNAL FILE FORMAT [ldw_pqt] \n\tWITH ( FORMAT_TYPE = PARQUET);\n\nIF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = N'MIdlakedevBronze')\n    CREATE EXTERNAL DATA SOURCE MIdlakedevBronze\n        WITH (\n            LOCATION = 'https://mcdedevdlake.dfs.core.windows.net/bronze/DIGITAL/sales_wwi/',\n        CREDENTIAL = SManagedIdentity\n    );\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = N'MIdlakedevSilver')\n    CREATE EXTERNAL DATA SOURCE MIdlakedevSilver\n        WITH (\n            LOCATION = 'https://mcdedevdlake.dfs.core.windows.net/silver/DIGITAL/sales_wwi/',\n        CREDENTIAL = SManagedIdentity\n    );\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'lnd' )\n    EXEC('CREATE SCHEMA [lnd] AUTHORIZATION [dbo]');\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'stg' )\n    EXEC('CREATE SCHEMA [stg] AUTHORIZATION [dbo]');\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'ldw' )\n    EXEC('CREATE SCHEMA [ldw] AUTHORIZATION [dbo]');\nGO",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "salesLDW",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

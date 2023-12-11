@@ -1,0 +1,20 @@
+{
+	"name": "Facts_ExtTables",
+	"properties": {
+		"folder": {
+			"name": "Dimensions_Facts"
+		},
+		"content": {
+			"query": "--  Create a single Fact table from the source Sales Order and Sales Order Detail data with a link to all dimensions\n\nCREATE EXTERNAL TABLE STG.FactSales\nWITH \n(\n  LOCATION = 'facts/factsales/initial',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT  \n  --Surrogate Keys \n    DC.CustomerKey,\n    CAST(FORMAT(SO.OrderDate,'yyyyMMdd') AS INT) as OrderDateKey,\n    DSI.StockItemKey,\n    DS.SupplierKey,\n    --Degenerate Dimensions\n    CAST(SO.OrderID AS INT) AS OrderID,\n    CAST(SOL.OrderLineID AS INT) AS OrderLineID,  \n    --Measure\n    CAST(SOL.Quantity AS INT) AS SalesOrderQuantity, \n    CAST(SOL.UnitPrice AS DECIMAL(18,2)) AS SalesOrderUnitPrice\nFROM lnd.vwSalesOrdersLines SOL\nINNER JOIN lnd.vwSalesOrders SO ON SOL.OrderID = SO.OrderID\nLEFT JOIN LDW.vwDimCustomer DC ON DC.CustomerID = SO.CustomerID\nLEFT JOIN LDW.vwDimStockItem DSI ON DSI.StockItemID = SOL.StockItemID\n-- LEFT JOIN lnd.vwStockItems SI ON SI.StockItemID = DSI.StockItemID\nLEFT JOIN LDW.vwDimSupplier DS ON DS.SupplierID = SI.SupplierID;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

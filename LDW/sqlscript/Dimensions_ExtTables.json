@@ -1,0 +1,20 @@
+{
+	"name": "Dimensions_ExtTables",
+	"properties": {
+		"folder": {
+			"name": "Dimensions_Facts"
+		},
+		"content": {
+			"query": "-- LOAD Dimensions\n\n-- Use CETAS to write as Parquet\n-- Use ROW_NUMBER() to generate surrogate key type INTEGER\n-- Add ValidFromDate\n-- The load will write the data out to a sub-folder \\01\\ in each dimension, future load will be uner \\02\\, \\03\\\n\n-- DimCustomer: built from: Customer, CustomerCategories, Cities, StateProvinces, Countries, BuyingGroups, DeliveryMethods\n\nCREATE EXTERNAL TABLE STG.DimCustomer\nWITH \n(\n  LOCATION = 'dimensions/dimcustomer/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY C.CustomerID) AS INT) AS CustomerKey,\n        CAST(C.CustomerID AS INT) AS CustomerID,\n        C.CustomerName,\n        CC.CustomerCategoryName,\n        BG.BuyingGroupName,\n        DM.DeliveryMethodName,\n        DC.CityName AS DeliveryCityName,\n        DSP.StateProvinceName AS DeliveryStateProvinceName,\n        DSP.SalesTerritory AS DeliverySalesTerritory,\n        DCO.Country AS DeliveryCountry,\n        DCO.Continent AS DeliveryContinent,\n        DCO.Region AS DeliveryRegion,\n        DCO.Subregion AS DeliverySubregion,\n        CAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwCustomers C\nLEFT JOIN lnd.vwCustomerCategories CC On CC.CustomerCategoryID = C.CustomerCategoryID\nLEFT JOIN lnd.vwCities DC ON DC.CityID = C.DeliveryCityID\nLEFT JOIN lnd.vwStateProvinces DSP ON DSP.StateProvinceID = DC.StateProvinceID\nLEFT JOIN lnd.vwCountries DCO ON DCO.CountryID = DSP.CountryID\nLEFT JOIN lnd.vwBuyingGroups BG ON BG.BuyingGroupID = C.BuyingGroupID\nLEFT JOIN lnd.vwDeliveryMethods DM ON DM.DeliveryMethodID = C.DeliveryMethodID\nORDER BY C.CustomerID\n\n-- DimStockItem: StockItems, Colors, PackageTypes\n\nCREATE EXTERNAL TABLE STG.DimStockItem\nWITH \n(\n  LOCATION = 'dimensions/dimstockitem/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY SI.StockItemID) AS SMALLINT) AS StockItemKey,\nCAST(SI.StockItemID AS SMALLINT) AS StockItemID,\nSI.StockItemName,\nSI.LeadTimeDays,\nC.ColorName,\nOP.PackageTypeName AS OuterPackageTypeName,\nCAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwStockItems SI\nLEFT JOIN lnd.vwColors C ON C.ColorID = SI.ColorID\nLEFT JOIN lnd.vwPackageTypes OP ON OP.PackageTypeID = SI.OuterPackageID\nORDER BY SI.StockItemID\n\n-- DimSupplier\n\nCREATE EXTERNAL TABLE STG.DimSupplier\nWITH \n(\n  LOCATION = 'conformed/dimensions/dimsupplier/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY S.SupplierID) AS TINYINT) AS SupplierKey,\nCAST(S.SupplierID AS TINYINT) AS SupplierID,\nS.SupplierName,\nSC.SupplierCategoryName,\nCAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwSuppliers S\nLEFT JOIN lnd.vwSupplierCategories SC ON SC.SupplierCategoryID = S.SupplierCategoryID\nORDER BY S.SupplierID;\n\n-- DimDate\n\nCREATE EXTERNAL TABLE STG.DimDate\nWITH \n(\n  LOCATION = 'dimensions/dimdate',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(DateKey AS INT) AS DateKey,\n        CAST(Date AS DATE) AS Date,\n        CAST(Day AS TINYINT) AS Day,\n        CAST(WeekDay AS TINYINT) AS WeekDay,\n        WeekDayName,\n        CAST(Month AS TINYINT) AS Month,\n        MonthName,\n        CAST(Quarter AS TINYINT) AS Quarter,\n        CAST(Year AS SMALLINT) AS Year\nFROM\nOPENROWSET \n(\n    BULK 'sourcedatadim/datedim/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

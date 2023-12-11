@@ -1,0 +1,20 @@
+{
+	"name": "create_statistics",
+	"properties": {
+		"folder": {
+			"name": "LDW_maintenance"
+		},
+		"content": {
+			"query": "-- Statistics\n\nEXEC sys.sp_create_openrowset_statistics N'\n    SELECT OrderDate\nFROM \nOPENROWSET \n(\n    BULK ''sourcedatapartitionsalesorder/*/*.csv'',\n    DATA_SOURCE = ''MIdlakedevBronze'',\n    FORMAT = ''CSV'',\n    PARSER_VERSION = ''2.0'',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR =''|''\n) AS fct\n'\n\n-- Push filter down to a folder - filepath() function\n\nSELECT YEAR(SO.OrderDate) AS OrderDateYear,\n        COUNT(SO.OrderDate) AS TotalOrderCount\nFROM LDW.vwSalesOrders SO\nWHERE SO.FilePathDate = '2017-02-16'\nGROUP BY YEAR(SO.OrderDate)",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

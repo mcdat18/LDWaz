@@ -1,0 +1,20 @@
+{
+	"name": "validate_data_types",
+	"properties": {
+		"folder": {
+			"name": "LDW_maintenance"
+		},
+		"content": {
+			"query": "EXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimDate';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimSupplier';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimStockItem';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimCustomer';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwFactSales';",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "master",
+				"poolName": "Built-in"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}
