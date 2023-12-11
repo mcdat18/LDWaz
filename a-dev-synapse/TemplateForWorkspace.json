@@ -1,0 +1,352 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"type": "string",
+			"metadata": "Workspace name",
+			"defaultValue": "a-dev-synapse"
+		},
+		"a-dev-synapse-WorkspaceDefaultSqlServer_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'a-dev-synapse-WorkspaceDefaultSqlServer'",
+			"defaultValue": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:a-dev-synapse.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"a-dev-synapse-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://mcdedevdlake.dfs.core.windows.net"
+		}
+	},
+	"variables": {
+		"workspaceId": "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('workspaceName'), '/a-dev-synapse-WorkspaceDefaultSqlServer')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"parameters": {
+					"DBName": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlDW",
+				"typeProperties": {
+					"connectionString": "[parameters('a-dev-synapse-WorkspaceDefaultSqlServer_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/a-dev-synapse-WorkspaceDefaultStorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('a-dev-synapse-WorkspaceDefaultStorage_properties_typeProperties_url')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AutoResolveIntegrationRuntime')]",
+			"type": "Microsoft.Synapse/workspaces/integrationRuntimes",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "AutoResolve",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 0
+						}
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/WorkspaceSystemIdentity')]",
+			"type": "Microsoft.Synapse/workspaces/credentials",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "ManagedIdentity",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Analysis')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Dimensions_Facts"
+				},
+				"content": {
+					"query": "--Group Sales by Date\nSELECT DD.[Year] AS SalesYear,\n    DD.[Month] AS SalesMonth,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice,\nCOUNT(DISTINCT FS.OrderID) AS SalesOrderTotal\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimDate DD ON DD.DateKey = FS.OrderDateKey\nGROUP BY DD.[Year],\n         DD.[Month]\nORDER BY DD.[Year],\n         DD.[Month];\n\n--Group Sales by Customer\nSELECT DC.DeliverySalesTerritory,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice,\nCOUNT(DISTINCT OrderID) AS SalesOrderTotal\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimCustomer DC ON DC.CustomerKey = FS.CustomerKey\nGROUP BY DC.DeliverySalesTerritory\nORDER BY SUM(FS.Quantity) DESC;\n\n--Group Sales by Supplier\n--Note that multiple Suppliers can be linked to a single Sales Order\nSELECT DS.SupplierName,\nSUM(FS.Quantity) AS SalesOrderQuantity,\nSUM(FS.UnitPrice) AS SalesOrderUnitPrice\nFROM LDW.vwFactSales FS\nINNER JOIN LDW.vwDimSupplier DS ON DS.SupplierKey = FS.SupplierKey\nGROUP BY DS.SupplierName\nORDER BY SUM(FS.Quantity) DESC;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Dimensions_ExtTables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Dimensions_Facts"
+				},
+				"content": {
+					"query": "-- LOAD Dimensions\n\n-- Use CETAS to write as Parquet\n-- Use ROW_NUMBER() to generate surrogate key type INTEGER\n-- Add ValidFromDate\n-- The load will write the data out to a sub-folder \\01\\ in each dimension, future load will be uner \\02\\, \\03\\\n\n-- DimCustomer: built from: Customer, CustomerCategories, Cities, StateProvinces, Countries, BuyingGroups, DeliveryMethods\n\nCREATE EXTERNAL TABLE STG.DimCustomer\nWITH \n(\n  LOCATION = 'dimensions/dimcustomer/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY C.CustomerID) AS INT) AS CustomerKey,\n        CAST(C.CustomerID AS INT) AS CustomerID,\n        C.CustomerName,\n        CC.CustomerCategoryName,\n        BG.BuyingGroupName,\n        DM.DeliveryMethodName,\n        DC.CityName AS DeliveryCityName,\n        DSP.StateProvinceName AS DeliveryStateProvinceName,\n        DSP.SalesTerritory AS DeliverySalesTerritory,\n        DCO.Country AS DeliveryCountry,\n        DCO.Continent AS DeliveryContinent,\n        DCO.Region AS DeliveryRegion,\n        DCO.Subregion AS DeliverySubregion,\n        CAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwCustomers C\nLEFT JOIN lnd.vwCustomerCategories CC On CC.CustomerCategoryID = C.CustomerCategoryID\nLEFT JOIN lnd.vwCities DC ON DC.CityID = C.DeliveryCityID\nLEFT JOIN lnd.vwStateProvinces DSP ON DSP.StateProvinceID = DC.StateProvinceID\nLEFT JOIN lnd.vwCountries DCO ON DCO.CountryID = DSP.CountryID\nLEFT JOIN lnd.vwBuyingGroups BG ON BG.BuyingGroupID = C.BuyingGroupID\nLEFT JOIN lnd.vwDeliveryMethods DM ON DM.DeliveryMethodID = C.DeliveryMethodID\nORDER BY C.CustomerID\n\n-- DimStockItem: StockItems, Colors, PackageTypes\n\nCREATE EXTERNAL TABLE STG.DimStockItem\nWITH \n(\n  LOCATION = 'dimensions/dimstockitem/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY SI.StockItemID) AS SMALLINT) AS StockItemKey,\nCAST(SI.StockItemID AS SMALLINT) AS StockItemID,\nSI.StockItemName,\nSI.LeadTimeDays,\nC.ColorName,\nOP.PackageTypeName AS OuterPackageTypeName,\nCAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwStockItems SI\nLEFT JOIN lnd.vwColors C ON C.ColorID = SI.ColorID\nLEFT JOIN lnd.vwPackageTypes OP ON OP.PackageTypeID = SI.OuterPackageID\nORDER BY SI.StockItemID\n\n-- DimSupplier\n\nCREATE EXTERNAL TABLE STG.DimSupplier\nWITH \n(\n  LOCATION = 'conformed/dimensions/dimsupplier/01',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(ROW_NUMBER() OVER(ORDER BY S.SupplierID) AS TINYINT) AS SupplierKey,\nCAST(S.SupplierID AS TINYINT) AS SupplierID,\nS.SupplierName,\nSC.SupplierCategoryName,\nCAST('2013-01-01' AS DATE) AS ValidFromDate\nFROM lnd.vwSuppliers S\nLEFT JOIN lnd.vwSupplierCategories SC ON SC.SupplierCategoryID = S.SupplierCategoryID\nORDER BY S.SupplierID;\n\n-- DimDate\n\nCREATE EXTERNAL TABLE STG.DimDate\nWITH \n(\n  LOCATION = 'dimensions/dimdate',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT CAST(DateKey AS INT) AS DateKey,\n        CAST(Date AS DATE) AS Date,\n        CAST(Day AS TINYINT) AS Day,\n        CAST(WeekDay AS TINYINT) AS WeekDay,\n        WeekDayName,\n        CAST(Month AS TINYINT) AS Month,\n        MonthName,\n        CAST(Quarter AS TINYINT) AS Quarter,\n        CAST(Year AS SMALLINT) AS Year\nFROM\nOPENROWSET \n(\n    BULK 'sourcedatadim/datedim/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Dimensions_Views')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Dimensions_Facts"
+				},
+				"content": {
+					"query": "-- Create VIEWS on Silver Data - as new data can be written to different folder under specific Dimension\n-- CETAS operation cannot write to an existing folder - this means no dupliate data\n-- To have CETAS write a new version DROP EXTERNAL TABLE.. plus delete folder\n\n--Customer\nCREATE VIEW LDW.vwDimCustomer\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimcustomer/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--StockItem\nCREATE VIEW LDW.vwDimStockItem\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimstockitem/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--Supplier\nCREATE VIEW LDW.vwDimSupplier\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimsupplier/*/',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct\n\n--Date\nCREATE VIEW LDW.vwDimDate\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'dimensions/dimdate',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Facts_ExtTables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Dimensions_Facts"
+				},
+				"content": {
+					"query": "--  Create a single Fact table from the source Sales Order and Sales Order Detail data with a link to all dimensions\n\nCREATE EXTERNAL TABLE STG.FactSales\nWITH \n(\n  LOCATION = 'facts/factsales/initial',\n  DATA_SOURCE = MIdlakedevSilver,\n  FILE_FORMAT = ldw_pqt\n) \nAS\nSELECT  \n  --Surrogate Keys \n    DC.CustomerKey,\n    CAST(FORMAT(SO.OrderDate,'yyyyMMdd') AS INT) as OrderDateKey,\n    DSI.StockItemKey,\n    DS.SupplierKey,\n    --Degenerate Dimensions\n    CAST(SO.OrderID AS INT) AS OrderID,\n    CAST(SOL.OrderLineID AS INT) AS OrderLineID,  \n    --Measure\n    CAST(SOL.Quantity AS INT) AS SalesOrderQuantity, \n    CAST(SOL.UnitPrice AS DECIMAL(18,2)) AS SalesOrderUnitPrice\nFROM lnd.vwSalesOrdersLines SOL\nINNER JOIN lnd.vwSalesOrders SO ON SOL.OrderID = SO.OrderID\nLEFT JOIN LDW.vwDimCustomer DC ON DC.CustomerID = SO.CustomerID\nLEFT JOIN LDW.vwDimStockItem DSI ON DSI.StockItemID = SOL.StockItemID\n-- LEFT JOIN lnd.vwStockItems SI ON SI.StockItemID = DSI.StockItemID\nLEFT JOIN LDW.vwDimSupplier DS ON DS.SupplierID = SI.SupplierID;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Facts_Views')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Dimensions_Facts"
+				},
+				"content": {
+					"query": "-- Facts VIEWS\n\nCREATE VIEW LDW.vwFactSales\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'conformed/facts/factsales/initial',\n    DATA_SOURCE = 'MIdlakedevSilver',\n    FORMAT = 'ldw_pqt'\n) AS fct",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/create_dataSource_DB')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Intialize_LDW"
+				},
+				"content": {
+					"query": "IF db_id('salesLDW') IS NULL\nEXEC('CREATE DATABASE salesLDW COLLATE Latin1_General_100_BIN2_UTF8');\nGO\n\nUSE salesLDW\nGO\n\nIF db_name() = 'master'\n    THROW 50001, 'This script cannot be executed in master database. Create new database and run the script there.', 1;\n\nIF SERVERPROPERTY('EngineEdition') <> 11\n    THROW 50001, 'This script must be executed on Azure Synapse - Serverless SQL endpoint.', 1;\n\nIF NOT EXISTS (SELECT * FROM sys.symmetric_keys) BEGIN\n    declare @pasword nvarchar(400) = CAST(newid() as VARCHAR(400));\n    EXEC('CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''' + @pasword + '''')\nEND;\nGO\n\nCREATE DATABASE SCOPED CREDENTIAL SManagedIdentity\nWITH IDENTITY = 'Managed Identity';\nGO\n\nCREATE DATABASE SCOPED CREDENTIAL SUserIdentity\nWITH IDENTITY = 'User Identity';\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'ldw_csv') \n    CREATE EXTERNAL FILE FORMAT ldw_csv\n    WITH (  \n        FORMAT_TYPE = DELIMITEDTEXT,    \n        FORMAT_OPTIONS ( FIELD_TERMINATOR = ',', \n                         STRING_DELIMITER = '\"',\n                         FIRST_ROW = 2,\n                         PARSER_VERSION = '2.0')\n    );\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'ldw_pqt') \n\tCREATE EXTERNAL FILE FORMAT [ldw_pqt] \n\tWITH ( FORMAT_TYPE = PARQUET);\n\nIF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = N'MIdlakedevBronze')\n    CREATE EXTERNAL DATA SOURCE MIdlakedevBronze\n        WITH (\n            LOCATION = 'https://mcdedevdlake.dfs.core.windows.net/bronze/DIGITAL/sales_wwi/',\n        CREDENTIAL = SManagedIdentity\n    );\nGO\n\nIF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = N'MIdlakedevSilver')\n    CREATE EXTERNAL DATA SOURCE MIdlakedevSilver\n        WITH (\n            LOCATION = 'https://mcdedevdlake.dfs.core.windows.net/silver/DIGITAL/sales_wwi/',\n        CREDENTIAL = SManagedIdentity\n    );\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'lnd' )\n    EXEC('CREATE SCHEMA [lnd] AUTHORIZATION [dbo]');\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'stg' )\n    EXEC('CREATE SCHEMA [stg] AUTHORIZATION [dbo]');\nGO\n\nIF NOT EXISTS ( SELECT * FROM sys.schemas WHERE name = N'ldw' )\n    EXEC('CREATE SCHEMA [ldw] AUTHORIZATION [dbo]');\nGO",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "salesLDW",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/create_statistics')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "LDW_maintenance"
+				},
+				"content": {
+					"query": "-- Statistics\n\nEXEC sys.sp_create_openrowset_statistics N'\n    SELECT OrderDate\nFROM \nOPENROWSET \n(\n    BULK ''sourcedatapartitionsalesorder/*/*.csv'',\n    DATA_SOURCE = ''MIdlakedevBronze'',\n    FORMAT = ''CSV'',\n    PARSER_VERSION = ''2.0'',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR =''|''\n) AS fct\n'\n\n-- Push filter down to a folder - filepath() function\n\nSELECT YEAR(SO.OrderDate) AS OrderDateYear,\n        COUNT(SO.OrderDate) AS TotalOrderCount\nFROM LDW.vwSalesOrders SO\nWHERE SO.FilePathDate = '2017-02-16'\nGROUP BY YEAR(SO.OrderDate)",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/create_views')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "Views_OPENROWSET"
+				},
+				"content": {
+					"query": "-- 1. SELECT *, HEADER_ROW = TRUE\n\nCREATE VIEW lnd.vwSalesOrders\nAS\nSELECT *,\nCAST(fct.filepath(1) AS DATE) AS FilePathDate\nFROM \nOPENROWSET \n(\n    BULK 'sourcedatapartitionsalesorder/OrderDatePartition=*/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwSalesOrdersLines\nAS\nSELECT *,\nCAST(fct.filepath(1) AS DATE) AS FilePathDate\nFROM \nOPENROWSET \n(\n    BULK 'sourcedatapartitionsalesorderline/OrderDate=*/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwCustomers\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Sales_Customers/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\n-- 2. SELECT specific columns\n\nCREATE VIEW lnd.vwCities\nAS\nSELECT CityID,\n        CityName,\n        StateProvinceID,\n        LatestRecordedPopulation\nFROM \nOPENROWSET \n(\n    BULK 'Application_Cities/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\n-- SELECT * and WITH to Define Columns type\n\nCREATE VIEW lnd.vwStateProvinces\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Application_StateProvinces/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n)\nWITH\n(\n    StateProvinceID TINYINT,\n    StateProvinceCode CHAR(2),\n    StateProvinceName VARCHAR(30),\n    CountryID TINYINT,\n    SalesTerritory VARCHAR(14),\n    LatestRecordedPopulation INT\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwCountries\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Application_Countries/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    FIRSTROW = 2,\n    FIELDTERMINATOR ='|'\n)\nWITH\n(\n    CountryID TINYINT 1,\n    Country VARCHAR(50) 2,\n    IsoCode3 CHAR(3) 4,\n    CountryType VARCHAR(50) 6,\n    LatestRecordedPopulation INT 7,\n    Continent VARCHAR(50) 8,\n    Region VARCHAR(50) 9,\n    Subregion VARCHAR(50) 10\n) AS fct;\nGO\n\n-- The remainder of the Views created will use the HEADER_ROW = TRUE syntax with SELECT * for code brevity\n\nCREATE VIEW lnd.vwBuyingGroups\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Sales_BuyingGroups/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwDeliveryMethods\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Application_DeliveryMethods/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwCustomerCategories\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Sales_CustomerCategories/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwPeople\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Application_People/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwSuppliers\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Purchasing_Suppliers/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwSupplierCategories\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Purchasing_SupplierCategories/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwStockItems\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Warehouse_StockItems/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwColors\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Warehouse_Colors/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n\nCREATE VIEW lnd.vwPackageTypes\nAS\nSELECT * FROM \nOPENROWSET \n(\n    BULK 'Warehouse_PackageTypes/*.csv',\n    DATA_SOURCE = 'MIdlakedevBronze',\n    FORMAT = 'CSV',\n    PARSER_VERSION = '2.0',\n    HEADER_ROW = TRUE,\n    FIELDTERMINATOR ='|'\n) AS fct;\nGO\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "salesLDW",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/drop_view_tables')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "LDW_maintenance"
+				},
+				"content": {
+					"query": "USE salesLDW;\nGO\n\nDROP VIEW IF EXISTS ldw.vwSalesOrders\nGO\n\nDROP VIEW IF EXISTS ldw.vwCustomers\nGO\n\nIF (EXISTS(SELECT * FROM sys.external_tables WHERE name = 'DimCustomer')) BEGIN\n    DROP EXTERNAL TABLE STG.DimCustomer\nEND",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "salesLDW",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/validate_data_types')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"folder": {
+					"name": "LDW_maintenance"
+				},
+				"content": {
+					"query": "EXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimDate';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimSupplier';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimStockItem';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwDimCustomer';\nEXEC sp_describe_first_result_set N'SELECT * FROM LDW.vwFactSales';",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "master",
+						"poolName": "Built-in"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/adevsparkpool')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"autoPause": {
+					"enabled": true,
+					"delayInMinutes": 15
+				},
+				"autoScale": {
+					"enabled": false,
+					"maxNodeCount": 3,
+					"minNodeCount": 3
+				},
+				"nodeCount": 3,
+				"nodeSize": "Small",
+				"nodeSizeFamily": "MemoryOptimized",
+				"sparkVersion": "3.3",
+				"isComputeIsolationEnabled": false,
+				"sessionLevelPackagesEnabled": false,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "eastus"
+		}
+	]
+}
