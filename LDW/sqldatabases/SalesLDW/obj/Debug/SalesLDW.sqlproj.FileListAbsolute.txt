@@ -1,0 +1,8 @@
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\bin\Debug\SalesLDW.dacpac
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\SalesLDW.sqlproj.AssemblyReference.cache
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\Model.xml
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\refactor.xml
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\postdeploy.sql
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\predeploy.sql
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\SalesLDW.dll
+c:\Users\MariusCi\OneDrive - Metrolinx\Desktop\MLX_WORK\MGit\LDWaz\LDW\sqldatabases\SalesLDW\obj\Debug\SalesLDW.pdb

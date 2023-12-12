@@ -1,0 +1,4 @@
+CREATE DATABASE SCOPED CREDENTIAL [SUserIdentity]
+    WITH IDENTITY = N'User Identity';
+GO
+
